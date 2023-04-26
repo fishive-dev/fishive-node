@@ -1,148 +1,237 @@
 #include <Arduino.h>
-
-// Neo Pixel
-#include <Adafruit_NeoPixel.h>
-Adafruit_NeoPixel pixels = Adafruit_NeoPixel(1, 13, NEO_GRB + NEO_KHZ800);
-
-// Load Wi-Fi library
 #include <WiFi.h>
+#include <ESPAsyncWebServer.h>
+#include "AsyncJson.h"
+#include "ArduinoJson.h"
 
-// Replace with your network credentials
+// For the DS18B20
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+// For the RGB WS2812B
+#include <Adafruit_NeoPixel.h>
+
+// Start webserver at port 80
+AsyncWebServer server(80);
+
+// WIFI Credentials
 const char *ssid = "Wu-Tang Lan_2.4";
 const char *password = "bluesmoonshot";
 
-// Set web server port number to 80
-WiFiServer server(80);
-
-// Variable to store the HTTP request
-String header;
-
-// Auxiliar variables to store the current output state
-String relay12State = "off";
-
-// Assign output variables to GPIO pins
+// Global GPIO Pin Setup
 const int relay12 = 12;
+const int ambientLight4 = 4;
+const int rgb13 = 13;
+const int pizeo26 = 26;
 
-// Current time
-unsigned long currentTime = millis();
-// Previous time
-unsigned long previousTime = 0;
-// Define timeout time in milliseconds (example: 2000ms = 2s)
-const long timeoutTime = 2000;
+// One wire sensors
+const int oneWireBus = 2;
+OneWire oneWire(oneWireBus);
+DallasTemperature sensors(&oneWire);
+
+// NeoPixel
+Adafruit_NeoPixel pixels = Adafruit_NeoPixel(60, rgb13, NEO_GRB + NEO_KHZ800);
+
+// GLOBAL VARIABLES
+float temp[2];
+int ambientLight = 0;
+
+void pinInitializer()
+{
+  pixels.begin();
+  pinMode(relay12, OUTPUT);
+  pinMode(ambientLight4, INPUT);
+  pinMode(pizeo26, OUTPUT);
+  // Set outputs to LOW
+  
+  digitalWrite(relay12, LOW);
+  digitalWrite(pizeo26, LOW);
+}
+
+void wifiInitlizer()
+{
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  while (WiFi.waitForConnectResult() != WL_CONNECTED)
+  {
+    Serial.printf("WiFi Connection Failed!\n");
+    Serial.println(String(ssid) + " not found!");
+  }
+  Serial.println("Connection Succesful!");
+  Serial.println("IP Address: ");
+  Serial.print(WiFi.localIP());
+}
+
+void updateTempData()
+{
+  sensors.requestTemperatures();
+  temp[0] = sensors.getTempCByIndex(0);
+  temp[1] = sensors.getTempCByIndex(1);
+  Serial.println("INFO: Fetching Temperature Data");
+  Serial.println("DATA: Temp_1: " + String(temp[0]) + " *C; Temp_2: " + String(temp[1]) + " *C");
+}
+
+void updateLightData()
+{
+  ambientLight = digitalRead(ambientLight4);
+  Serial.println("INFO: Fetching Light Data");
+  Serial.println("DATA: Ambient Light: " + String(ambientLight));
+}
+
+void updateSensorData()
+{
+  updateTempData();
+  updateLightData();
+}
+
+void emptyHandler()
+{
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
+            {
+    StaticJsonDocument<100> data;
+    data["message"] = "Welcome to your fisive node";
+    String response;
+    serializeJson(data, response);
+    request->send(200, "application/json", response); });
+}
+
+void sensorHandler()
+{
+  server.on("/get-sensors", HTTP_GET, [](AsyncWebServerRequest *request)
+            {
+    StaticJsonDocument<100> data;
+    data["temp_1"] = temp[0];
+    data["temp_2"] = temp[1];
+    data["ambient_light"] = ambientLight;
+    String response;
+    serializeJson(data, response);
+    request->send(200, "application/json", response); });
+}
+
+void pumpHandler()
+{
+  server.on("/pump-state", HTTP_GET, [](AsyncWebServerRequest *request)
+            {
+    StaticJsonDocument<100> data;
+    if (request->hasParam("state"))
+      data["state"] = request->getParam("state")->value();
+    else
+      data["message"] = "No message parameter";
+
+
+    if(data["state"] == "on")
+    {
+      Serial.println("INFO: Pump is on");
+      Serial.println("GPIO: 12 ON");
+      digitalWrite(relay12, HIGH);
+
+    }
+    else if(data["state"] == "off")
+    {
+      Serial.println("INFO: Pump is off");
+      Serial.println("GPIO: 12 off");
+      digitalWrite(relay12, LOW);
+    }
+    else
+      Serial.println("WARN: Pump is offline");
+
+    String response;
+    serializeJson(data, response);
+    request->send(200, "application/json", response); });
+}
+
+void rgbHandler()
+{
+  server.on("/rgb-state", HTTP_GET, [](AsyncWebServerRequest *request)
+            {
+    StaticJsonDocument<100> data;
+    if (request->hasParam("state")){
+      data["state"] = request->getParam("state")->value();
+      data["r"] = request->getParam("r")->value();
+      data["g"] = request->getParam("g")->value();
+      data["b"] = request->getParam("b")->value();
+      data["brightness"] = request->getParam("brightness")->value();
+    }
+    else
+      data["message"] = "No message parameter";
+
+    if(data["state"] == "on")
+    {
+      Serial.println("INFO: RGB is on");
+      Serial.println("GPIO: 13 ON");
+      pixels.setBrightness(data["brightness"]);
+      pixels.setPixelColor(0, pixels.Color(data["r"], data["g"], data["b"]));
+      pixels.show();
+    }
+    else if(data["state"] == "off")
+    {
+      Serial.println("INFO: RGB is off");
+      Serial.println("GPIO: 13 off");
+      pixels.setBrightness(0);
+      pixels.setPixelColor(0, pixels.Color(0, 0, 0));
+      pixels.show();
+    }
+    else
+      Serial.println("WARN: RGB is offline");
+
+    String response;
+    serializeJson(data, response);
+    request->send(200, "application/json", response); });
+}
+
+void pizeoHandler(){
+  server.on("/pizeo-state", HTTP_GET, [](AsyncWebServerRequest *request)
+            {
+    StaticJsonDocument<100> data;
+    if (request->hasParam("state"))
+      data["state"] = request->getParam("state")->value();
+    else
+      data["message"] = "No message parameter";
+
+
+    if(data["state"] == "on")
+    {
+      Serial.println("INFO: Pizeo is on");
+      Serial.println("GPIO: 26 ON");
+      digitalWrite(pizeo26, HIGH);
+
+    }
+    else if(data["state"] == "off")
+    {
+      Serial.println("INFO: Pizeo is off");
+      Serial.println("GPIO: 26 off");
+      digitalWrite(pizeo26, LOW);
+    }
+    else
+      Serial.println("WARN: Pizeo is offline");
+
+    String response;
+    serializeJson(data, response);
+    request->send(200, "application/json", response); });
+}
+
+void notFound(AsyncWebServerRequest *request)
+{
+  request->send(404, "application/json", "{\"status\":\"404\"}");
+}
 
 void setup()
 {
   Serial.begin(115200);
-  pixels.begin();
-  // Initialize the output variables as outputs
-  pinMode(relay12, OUTPUT);
-
-  // Set outputs to LOW
-  digitalWrite(relay12, LOW);
-
-
-  // Connect to Wi-Fi network with SSID and password
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    delay(500);
-    Serial.print(".");
-  }
-
-  // Print local IP address and start web server
-  Serial.println("");
-  Serial.println("WiFi connected.");
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
+  wifiInitlizer();
+  pinInitializer();
+  emptyHandler();
+  sensorHandler();
+  pumpHandler();
+  rgbHandler();
+  pizeoHandler();
+  server.onNotFound(notFound);
   server.begin();
 }
-
 void loop()
 {
-  WiFiClient client = server.available(); // Listen for incoming clients
-
-  if (client)
-  { // If a new client connects,
-    currentTime = millis();
-    previousTime = currentTime;
-    Serial.println("New Client."); // print a message out in the serial port
-    String currentLine = "";       // make a String to hold incoming data from the client
-
-    while (client.connected() && currentTime - previousTime <= timeoutTime)
-    { // loop while the client's connected
-      currentTime = millis();
-      if (client.available())
-      {                         // if there's bytes to read from the client,
-        char c = client.read(); // read a byte, then
-        Serial.write(c);        // print it out the serial monitor
-        header += c;
-        if (c == '\n')
-        { // if the byte is a newline character
-          // if the current line is blank, you got two newline characters in a row.
-          // that's the end of the client HTTP request, so send a response:
-          if (currentLine.length() == 0)
-          {
-            // HTTP headers always start with a response code (e.g. HTTP/1.1 200 OK)
-            // and a content-type so the client knows what's coming, then a blank line:
-            client.println("HTTP/1.1 200 OK");
-            client.println("Content-type:text/html");
-            client.println("Connection: close");
-            client.println();
-
-            // turns the GPIOs on and off
-            if (header.indexOf("GET /12/on") >= 0)
-            {
-              Serial.println("GPIO 12 on");
-              relay12State = "on";
-              digitalWrite(relay12, HIGH);
-            }
-            else if (header.indexOf("GET /12/off") >= 0)
-            {
-              Serial.println("GPIO 12 off");
-              relay12State = "off";
-              digitalWrite(relay12, LOW);
-            }
-
-            // Display the HTML web page
-            // Web Page Heading
-            client.println("<html><body><h1>Hive Node Runnningr</h1></body></html>");
-
-            // The HTTP response ends with another blank line
-            client.println();
-            // Break out of the while loop
-            break;
-          }
-          else
-          { // if you got a newline, then clear currentLine
-            currentLine = "";
-          }
-        }
-        else if (c != '\r')
-        {                   // if you got anything else but a carriage return character,
-          currentLine += c; // add it to the end of the currentLine
-        }
-      }
-    }
-    // Clear the header variable
-    header = "";
-    // Close the connection
-    client.stop();
-    Serial.println("Client disconnected.");
-    Serial.println("");
-  }
-  for (int i = 0; i < 2; i++)
-  {
-    for (int j = 0; j < 2; j++)
-    {
-      for (int k = 0; k < 2; k++)
-      {
-
-        pixels.setPixelColor(0, pixels.Color(i * 255, j * 255, k * 255)); // Moderately bright green color.
-        pixels.show();                                                    // This sends the updated pixel color to the hardware.
-        delay(200);                                                       // Delay for a period of time (in milliseconds).
-      }
-    }
-  }
+  //Sesnor state updates
+  updateSensorData();
+  sleep(1);
 }
