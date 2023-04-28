@@ -11,6 +11,10 @@
 // For the RGB WS2812B
 #include <Adafruit_NeoPixel.h>
 
+// For OLED
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
 // Start webserver at port 80
 AsyncWebServer server(80);
 
@@ -29,12 +33,21 @@ const int oneWireBus = 2;
 OneWire oneWire(oneWireBus);
 DallasTemperature sensors(&oneWire);
 
+// OLED Screen Stuff
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 64 // OLED display height, in pixels
+
+// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
+#define OLED_RESET -1 // Reset pin # (or -1 if sharing Arduino reset pin)
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
 // NeoPixel
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(60, rgb13, NEO_GRB + NEO_KHZ800);
 
 // GLOBAL VARIABLES
 float temp[2];
 int ambientLight = 0;
+bool wifiConnected = false;
 
 void pinInitializer()
 {
@@ -43,7 +56,7 @@ void pinInitializer()
   pinMode(ambientLight4, INPUT);
   pinMode(pizeo26, OUTPUT);
   // Set outputs to LOW
-  
+
   digitalWrite(relay12, LOW);
   digitalWrite(pizeo26, LOW);
 }
@@ -55,9 +68,11 @@ void wifiInitlizer()
   WiFi.begin(ssid, password);
   while (WiFi.waitForConnectResult() != WL_CONNECTED)
   {
+    wifiConnected = false;
     Serial.printf("WiFi Connection Failed!\n");
     Serial.println(String(ssid) + " not found!");
   }
+  wifiConnected = true;
   Serial.println("Connection Succesful!");
   Serial.println("IP Address: ");
   Serial.print(WiFi.localIP());
@@ -161,7 +176,9 @@ void rgbHandler()
       Serial.println("INFO: RGB is on");
       Serial.println("GPIO: 13 ON");
       pixels.setBrightness(data["brightness"]);
-      pixels.setPixelColor(0, pixels.Color(data["r"], data["g"], data["b"]));
+      for (size_t i = 0; i < 60; i++)
+        pixels.setPixelColor(i, pixels.Color(data["r"], data["g"], data["b"]));
+      
       pixels.show();
     }
     else if(data["state"] == "off")
@@ -169,7 +186,6 @@ void rgbHandler()
       Serial.println("INFO: RGB is off");
       Serial.println("GPIO: 13 off");
       pixels.setBrightness(0);
-      pixels.setPixelColor(0, pixels.Color(0, 0, 0));
       pixels.show();
     }
     else
@@ -180,7 +196,8 @@ void rgbHandler()
     request->send(200, "application/json", response); });
 }
 
-void pizeoHandler(){
+void pizeoHandler()
+{
   server.on("/pizeo-state", HTTP_GET, [](AsyncWebServerRequest *request)
             {
     StaticJsonDocument<100> data;
@@ -216,9 +233,50 @@ void notFound(AsyncWebServerRequest *request)
   request->send(404, "application/json", "{\"status\":\"404\"}");
 }
 
+void displayUpdate()
+{
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+  display.setCursor(0, 0);
+  display.cp437(true);
+  display.println("~ Fisive Node v0.2 ~");
+  if (wifiConnected)
+    display.println("IP: " + WiFi.localIP().toString());
+  else
+    display.println(" WiFi not connected ");
+
+  display.println("SSID:" + WiFi.SSID());
+  display.println("Temp 1: " + String(temp[0]) + " *C");
+  display.println("Temp 2: " + String(temp[1]) + " *C");
+  display.println("Ambient Light: " + String(ambientLight));
+  display.println("RGB:" + String(pixels.getPixelColor(0)));
+  display.display();
+}
+
+void displayInitialize()
+{
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C))
+  { // Address 0x3D for 128x64
+    Serial.println(F("SSD1306 allocation failed"));
+    for (;;)
+      ;
+  }
+  delay(1000);
+  display.clearDisplay();
+  display.display();
+  delay(2000);
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+  display.setCursor(0, 0);
+  display.cp437(true);
+}
+
 void setup()
 {
   Serial.begin(115200);
+  displayInitialize();
   wifiInitlizer();
   pinInitializer();
   emptyHandler();
@@ -226,12 +284,17 @@ void setup()
   pumpHandler();
   rgbHandler();
   pizeoHandler();
+
+  DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
+  DefaultHeaders::Instance().addHeader("Access-Control-Allow-Methods", "GET, POST, PUT");
+  DefaultHeaders::Instance().addHeader("Access-Control-Allow-Headers", "Content-Type");
   server.onNotFound(notFound);
   server.begin();
 }
 void loop()
 {
-  //Sesnor state updates
+  // Sesnor state updates
   updateSensorData();
+  displayUpdate();
   sleep(1);
 }
