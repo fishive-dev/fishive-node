@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
+#include <Servo.h>
 #include "AsyncJson.h"
 #include "ArduinoJson.h"
 
@@ -284,6 +285,11 @@ void setup()
   pumpHandler();
   rgbHandler();
   pizeoHandler();
+  
+  //Servo motor
+  servo.attach(8);
+  servo.write(0);
+  delay(10);
 
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Methods", "GET, POST, PUT");
@@ -291,8 +297,22 @@ void setup()
   server.onNotFound(notFound);
   server.begin();
 }
+
 void loop()
 {
+  
+  //Servo motor {0  to 180 pos}
+  for(pos = 0; pos <= 180; pos++){
+    servo.write(pos);
+    delay(10);
+    }
+  
+  //Servo motor {180 to 0 pos}
+  for(pos = 180; pos >= 0; pos--){
+    servo.write(pos);
+    delay(10);
+  
+  
   // Sesnor state updates
   updateSensorData();
   displayUpdate();
