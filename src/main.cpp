@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
+#include <Servo.h>
 #include "AsyncJson.h"
 #include "ArduinoJson.h"
 
@@ -48,6 +49,9 @@ Adafruit_NeoPixel pixels = Adafruit_NeoPixel(60, rgb13, NEO_GRB + NEO_KHZ800);
 float temp[2];
 int ambientLight = 0;
 bool wifiConnected = false;
+
+//Initializing Servo motor
+Servo servo;
 
 void pinInitializer()
 {
@@ -109,6 +113,14 @@ void emptyHandler()
     String response;
     serializeJson(data, response);
     request->send(200, "application/json", response); });
+}
+
+void servomotor()
+{
+  servo.write(180);  
+  delay(1000);       
+  servo.write(0);  
+  delay(1000);
 }
 
 void sensorHandler()
@@ -284,6 +296,9 @@ void setup()
   pumpHandler();
   rgbHandler();
   pizeoHandler();
+  
+  //servo attached to pin 12
+  servo.attach(12)
 
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Methods", "GET, POST, PUT");
@@ -293,6 +308,10 @@ void setup()
 }
 void loop()
 {
+  
+  // Servo motor
+  servomotor();
+  
   // Sesnor state updates
   updateSensorData();
   displayUpdate();
