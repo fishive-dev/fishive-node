@@ -1,12 +1,18 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
+#include <Servo.h>
 #include "AsyncJson.h"
 #include "ArduinoJson.h"
 
 // For the DS18B20
 #include <OneWire.h>
 #include <DallasTemperature.h>
+
+//Servo pwm pin: D5
+static const int servoPin = 5;
+
+Servo servo1;
 
 // For the RGB WS2812B
 #include <Adafruit_NeoPixel.h>
@@ -59,6 +65,20 @@ void pinInitializer()
 
   digitalWrite(relay12, LOW);
   digitalWrite(pizeo26, LOW);
+}
+
+void servomotor() {
+    for(int posDegrees = 0; posDegrees <= 180; posDegrees++) {
+        servo1.write(posDegrees);
+        Serial.println(posDegrees);
+        delay(20);
+    }
+
+    for(int posDegrees = 180; posDegrees >= 0; posDegrees--) {
+        servo1.write(posDegrees);
+        Serial.println(posDegrees);
+        delay(20);
+    }
 }
 
 void wifiInitlizer()
@@ -284,6 +304,9 @@ void setup()
   pumpHandler();
   rgbHandler();
   pizeoHandler();
+  
+  //Servo motor
+  servo1.attach(servoPin);
 
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Methods", "GET, POST, PUT");
@@ -293,6 +316,10 @@ void setup()
 }
 void loop()
 {
+  
+  //Servo motor
+  servomotor();
+  
   // Sesnor state updates
   updateSensorData();
   displayUpdate();
