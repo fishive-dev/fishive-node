@@ -3,6 +3,7 @@
 #include <ESPAsyncWebServer.h>
 #include "AsyncJson.h"
 #include "ArduinoJson.h"
+#include "Servo.h"
 
 // For the DS18B20
 #include <OneWire.h>
@@ -28,6 +29,10 @@ const int ambientLight4 = 4;
 const int rgb13 = 13;
 const int pizeo26 = 26;
 
+// Servo Setup
+const int servo5 = 5;
+Servo servo;
+
 // One wire sensors
 const int oneWireBus = 2;
 OneWire oneWire(oneWireBus);
@@ -52,6 +57,7 @@ bool wifiConnected = false;
 void pinInitializer()
 {
   pixels.begin();
+  servo.attach(servo5);
   pinMode(relay12, OUTPUT);
   pinMode(ambientLight4, INPUT);
   pinMode(pizeo26, OUTPUT);
@@ -60,6 +66,8 @@ void pinInitializer()
   digitalWrite(relay12, LOW);
   digitalWrite(pizeo26, LOW);
 }
+
+
 
 void wifiInitlizer()
 {
@@ -100,12 +108,55 @@ void updateSensorData()
   updateLightData();
 }
 
+void servoLoop()
+{
+  for (int posDegrees = 0; posDegrees <= 180; posDegrees++)
+  {
+    servo.write(posDegrees);
+    Serial.println(posDegrees);
+    delay(10);
+  }
+
+  for (int posDegrees = 180; posDegrees >= 0; posDegrees--)
+  {
+    servo.write(posDegrees);
+    Serial.println(posDegrees);
+    delay(10);
+  }
+}
+
 void emptyHandler()
 {
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
             {
     StaticJsonDocument<100> data;
     data["message"] = "Welcome to your fisive node";
+    String response;
+    serializeJson(data, response);
+    request->send(200, "application/json", response); });
+}
+
+void servoHandler(){
+  server.on("/servo", HTTP_GET, [](AsyncWebServerRequest *request)
+            {
+    StaticJsonDocument<100> data;
+    if (request->hasParam("state"))
+      data["state"] = request->getParam("state")->value();
+    else
+      data["message"] = "No message parameter";
+
+    if(data["state"] == "on")
+    {
+      Serial.println("INFO: Servo is on");
+      servoLoop();
+    }
+    else if(data["state"] == "off")
+    {
+      Serial.println("INFO: Servo is off");
+    }
+    else
+      Serial.println("WARN: Servo is offline");
+
     String response;
     serializeJson(data, response);
     request->send(200, "application/json", response); });
@@ -284,6 +335,7 @@ void setup()
   pumpHandler();
   rgbHandler();
   pizeoHandler();
+  servoHandler();
 
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Methods", "GET, POST, PUT");
